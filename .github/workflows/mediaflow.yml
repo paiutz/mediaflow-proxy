@@ -6,28 +6,30 @@ on:
 jobs:
   build:
     runs-on: windows-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Install dependencies
-        run: pip install pyinstaller -r requirements.txt
+      - name: Install Poetry
+        run: pip install poetry
 
-      - name: Build EXE
-        run: pyinstaller --noconfirm --onefile --name mediaflow app.py
+      - name: Install dependencies with Poetry
+        run: poetry install
 
-      - name: Copy .env (if exists)
-        shell: bash
-        run: |
-          if [ -f .env ]; then cp .env dist/.env; fi
+      - name: Install PyInstaller
+        run: pip install pyinstaller
 
-      - name: Upload artifact
+      - name: Build EXE with PyInstaller
+        run: pyinstaller --noconfirm --onefile --name mediaflow mediaflow_proxy/main.py
+
+      - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: mediaflow-exe
+          name: MediaFlow EXE
           path: dist/mediaflow.exe
