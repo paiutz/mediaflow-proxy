@@ -1,0 +1,33 @@
+name: Build MediaFlow EXE
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install pyinstaller -r requirements.txt
+
+      - name: Build EXE
+        run: pyinstaller --noconfirm --onefile --name mediaflow app.py
+
+      - name: Copy .env (if exists)
+        shell: bash
+        run: |
+          if [ -f .env ]; then cp .env dist/.env; fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediaflow-exe
+          path: dist/mediaflow.exe
