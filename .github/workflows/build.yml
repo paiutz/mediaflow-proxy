@@ -1,0 +1,42 @@
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - main  # Change this to your default branch if it's not 'main'
+  pull_request:
+    branches:
+      - main  # Change this to your default branch if it's not 'main'
+
+jobs:
+  build:
+    runs-on: ubuntu-latest  # You can change this to 'windows-latest' if you prefer
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: '3.8'  # Specify the Python version you want to use
+
+      - name: Install dependencies
+        run: |
+          pip install poetry
+          poetry install
+
+      - name: Run tests
+        run: |
+          poetry run pytest tests/
+
+      - name: Build executable
+        run: |
+          pip install pyinstaller
+          pyinstaller --onefile mediaflow_proxy/main.py
+          
+      - name: Upload executable
+        uses: actions/upload-artifact@v2
+        with:
+          name: mediaflow-proxy-executable
+          path: dist/main.exe  # Adjust the path if necessary
