@@ -1,0 +1,62 @@
+name: launcher.exe
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger only on version tags like v1.0.0
+  workflow_dispatch:
+
+jobs:
+  build-windows-exe:
+    name: Build MediaFlow EXE
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.2'
+
+      - name: 📥 Install dependencies
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-dev
+
+      - name: 🧾 Auto-generate .env (API_PASSWORD only)
+        run: |
+          echo API_PASSWORD=${{ secrets.API_PASSWORD != '' && secrets.API_PASSWORD || 'changeme' }} > .env
+
+      - name: 🧊 Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: ⚙️ Build EXE from launcher.py (with certs and .env)
+        run: |
+          pyinstaller launcher.py ^
+            --onefile ^
+            --name mediaflow ^
+            --add-data "mediaflow_proxy/static;mediaflow_proxy/static" ^
+            --add-data "cert.pem;." ^
+            --add-data "key.pem;." ^
+            --add-data ".env;."
+
+      - name: 📦 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediaflow-exe
+          path: dist/mediaflow.exe
+
+      - name: 🚀 Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/mediaflow.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
