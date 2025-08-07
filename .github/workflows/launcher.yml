@@ -1,14 +1,14 @@
-name: launcher.exe
+name: Build MediaFlow EXE
 
 on:
   push:
     tags:
-      - 'v*'  # Trigger only on version tags like v1.0.0
-  workflow_dispatch:
+      - 'v*'  # Run only when pushing a tag like v1.0.0
+  workflow_dispatch:  # Allow manual run from GitHub UI
 
 jobs:
-  build-windows-exe:
-    name: Build MediaFlow EXE
+  build-windows:
+    name: Build mediaflow.exe for Windows
     runs-on: windows-latest
 
     steps:
@@ -30,19 +30,32 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --no-dev
 
-      - name: 🧾 Auto-generate .env (API_PASSWORD only)
-        run: echo API_PASSWORD=${{ secrets.API_PASSWORD != '' && secrets.API_PASSWORD || 'changeme' }} > .env
+      - name: 🧾 Auto-generate .env
+        run: |
+          echo API_PASSWORD=${{ secrets.API_PASSWORD != '' && secrets.API_PASSWORD || 'changeme' }} > .env
 
       - name: 🧊 Install PyInstaller
         run: pip install pyinstaller
 
-      - name: ⚙️ Build EXE from launcher.py (with certs and .env)
-        run: >
-          pyinstaller launcher.py --onefile --name mediaflow
-          --add-data "mediaflow_proxy/static;mediaflow_proxy/static"
-          --add-data "cert.pem;."
-          --add-data "key.pem;."
-          --add-data ".env;."
+      - name: ⚙️ Build mediaflow.exe with cert and .env support
+        run: |
+          pyinstaller launcher.py `
+            --onefile `
+            --name mediaflow `
+            --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
+            --add-data ".env;."
+
+          # Optional certs - include if they exist
+          if (Test-Path "cert.pem" -and Test-Path "key.pem") {
+            echo "🔐 Adding cert.pem and key.pem to EXE"
+            pyinstaller launcher.py `
+              --onefile `
+              --name mediaflow `
+              --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
+              --add-data ".env;." `
+              --add-data "cert.pem;." `
+              --add-data "key.pem;."
+          }
 
       - name: 📦 Upload artifact
         uses: actions/upload-artifact@v4
@@ -50,7 +63,7 @@ jobs:
           name: mediaflow-exe
           path: dist/mediaflow.exe
 
-      - name: 🚀 Create GitHub Release
+      - name: 🚀 GitHub Release (on tag only)
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
