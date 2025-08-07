@@ -37,16 +37,18 @@ jobs:
       - name: 🧊 Install PyInstaller
         run: pip install pyinstaller
 
-      - name: ⚙️ Build mediaflow.exe with cert and .env support
+      - name: ⚙️ Build mediaflow.exe with optional certs
+        shell: pwsh
         run: |
+          # Initial build with required files
           pyinstaller launcher.py `
             --onefile `
             --name mediaflow `
             --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
             --add-data ".env;."
 
-          # Optional certs - include if they exist
-          if (Test-Path "cert.pem" -and Test-Path "key.pem") {
+          # If cert.pem and key.pem exist, rebuild including them
+          if ((Test-Path "cert.pem") -and (Test-Path "key.pem")) {
             echo "🔐 Adding cert.pem and key.pem to EXE"
             pyinstaller launcher.py `
               --onefile `
@@ -55,6 +57,8 @@ jobs:
               --add-data ".env;." `
               --add-data "cert.pem;." `
               --add-data "key.pem;."
+          } else {
+            echo "⚠️ cert.pem or key.pem missing - building HTTP-only"
           }
 
       - name: 📦 Upload artifact
