@@ -1,4 +1,3 @@
-# launcher.py
 import os
 import sys
 from dotenv import load_dotenv
@@ -11,7 +10,11 @@ load_dotenv(dotenv_path)
 # ✅ Set fallback for missing env vars
 os.environ.setdefault("API_PASSWORD", "changeme")
 
-# ✅ Import the FastAPI app
+# ✅ Optional: Debug log API_PASSWORD only when DEBUG=true
+if os.getenv("DEBUG", "false").lower() == "true":
+    print(f"🔐 API_PASSWORD: {os.getenv('API_PASSWORD')}")
+
+# ✅ Import the actual FastAPI app
 from mediaflow_proxy.main import app
 
 def run():
@@ -19,10 +22,17 @@ def run():
 
     is_frozen = getattr(sys, 'frozen', False)
 
-    ssl_certfile = os.path.join(base_path, "cert.pem")
-    ssl_keyfile = os.path.join(base_path, "key.pem")
+    # ✅ Check for HTTPS cert files in the same folder
+    cert_file = os.path.join(base_path, "cert.pem")
+    key_file = os.path.join(base_path, "key.pem")
+    ssl_args = {}
 
-    ssl_enabled = os.path.exists(ssl_certfile) and os.path.exists(ssl_keyfile)
+    if os.path.exists(cert_file) and os.path.exists(key_file):
+        ssl_args["ssl_certfile"] = cert_file
+        ssl_args["ssl_keyfile"] = key_file
+        print("🔐 HTTPS enabled with cert.pem and key.pem")
+    else:
+        print("⚠️ No cert.pem/key.pem found. Running over HTTP.")
 
     uvicorn.run(
         app,
@@ -31,8 +41,7 @@ def run():
         log_level="info",
         workers=1,
         reload=not is_frozen,
-        ssl_certfile=ssl_certfile if ssl_enabled else None,
-        ssl_keyfile=ssl_keyfile if ssl_enabled else None,
+        **ssl_args
     )
 
 if __name__ == "__main__":
