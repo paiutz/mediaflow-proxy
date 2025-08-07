@@ -31,21 +31,18 @@ jobs:
           poetry install --no-dev
 
       - name: 🧾 Auto-generate .env (API_PASSWORD only)
-        run: |
-          echo API_PASSWORD=${{ secrets.API_PASSWORD != '' && secrets.API_PASSWORD || 'changeme' }} > .env
+        run: echo API_PASSWORD=${{ secrets.API_PASSWORD != '' && secrets.API_PASSWORD || 'changeme' }} > .env
 
       - name: 🧊 Install PyInstaller
         run: pip install pyinstaller
 
       - name: ⚙️ Build EXE from launcher.py (with certs and .env)
-        run: |
-          pyinstaller launcher.py ^
-            --onefile ^
-            --name mediaflow ^
-            --add-data "mediaflow_proxy/static;mediaflow_proxy/static" ^
-            --add-data "cert.pem;." ^
-            --add-data "key.pem;." ^
-            --add-data ".env;."
+        run: >
+          pyinstaller launcher.py --onefile --name mediaflow
+          --add-data "mediaflow_proxy/static;mediaflow_proxy/static"
+          --add-data "cert.pem;."
+          --add-data "key.pem;."
+          --add-data ".env;."
 
       - name: 📦 Upload artifact
         uses: actions/upload-artifact@v4
