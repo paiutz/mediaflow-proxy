@@ -1,4 +1,4 @@
-name: Build launcher Mediaflow.exe
+name: Build Mediaflow.exe
 
 on:
   push:
@@ -39,7 +39,7 @@ jobs:
 
       - name: ⚙️ Build EXE from launcher.py
         run: |
-          pyinstaller launcher.py --onefile --name mediaflow
+          pyinstaller launcher.py --onefile --name mediaflow --add-data "mediaflow_proxy/static;mediaflow_proxy/static"
 
       - name: 📦 Upload artifact
         uses: actions/upload-artifact@v4
