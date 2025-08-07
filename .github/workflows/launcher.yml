@@ -1,4 +1,4 @@
-name: Build MediaFlow EXE
+name: BuildlauncherEXE
 
 on:
   push:
