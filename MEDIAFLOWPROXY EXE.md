@@ -39,6 +39,7 @@ API_PASSWORD=your_secure_password
 CERT_PATH=cert/cert.pem
 KEY_PATH=cert/key.pem
 M3U8_CONTENT_ROUTING=mediaflow
+DEBUG=true/false
 ```
 
 > If `.env` is missing, `mediaflow.exe` will use defaults and still run.
