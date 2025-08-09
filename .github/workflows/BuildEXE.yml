@@ -55,8 +55,8 @@ jobs:
         run: |
           echo "API_PASSWORD=${API_PASSWORD}" > dist/.env
           echo "PORT=${PORT}" >> dist/.env
-          echo "DEBUG=true" >> dist/.env
           echo "WORKERS=${WORKERS}" >> dist/.env
+          echo "DEBUG=true" >> dist/.env
 
       - name: Create ZIP con EXE e .env
         run: |
