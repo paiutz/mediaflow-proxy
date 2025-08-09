@@ -354,20 +354,20 @@ https://github.com/mhdzumair/mediaflow-proxy
           body: |
             ## MediaFlow Proxy Windows Release
             
-            ### 🚀 Quick Start
+            ### Quick Start
             1. Download and extract the ZIP file
-            2. Run `start-mediaflow.bat` to start the server
+            2. Run start-mediaflow.bat to start the server
             3. Open http://localhost:8888 in your browser
-            4. **⚠️ Change the default API password in `.env` file!**
+            4. Change the default API password in .env file!
             
-            ### 📋 What's Included
-            - `mediaflow-proxy.exe` - Main executable
-            - `start-mediaflow.bat` - Convenient startup script
-            - `.env` - Configuration file
-            - `README.txt` - Detailed instructions
+            ### What's Included
+            - mediaflow-proxy.exe - Main executable
+            - start-mediaflow.bat - Convenient startup script
+            - .env - Configuration file
+            - README.txt - Detailed instructions
             
-            ### 🔧 Configuration
-            Edit the `.env` file to customize settings like API password, port, and other options.
+            ### Configuration
+            Edit the .env file to customize settings like API password, port, and other options.
             
             For full documentation, visit: https://github.com/mhdzumair/mediaflow-proxy
         env:
