@@ -20,7 +20,6 @@ jobs:
     env:
       API_PASSWORD: ${{ secrets.API_PASSWORD || 'changeme' }}
       PORT: ${{ secrets.PORT || '8888' }}
-      WORKERS: ${{ secrets.WORKERS || '4' }}
       DEBUG: ${{ github.event.inputs.debug || 'false' }}
     
     steps:
@@ -31,7 +30,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'  # Cache pip dependencies automatically
+          cache: 'pip'
       
       - name: Install Poetry
         uses: abatilo/actions-poetry@v3
@@ -54,102 +53,293 @@ jobs:
       - name: Install PyInstaller
         run: pip install pyinstaller
       
+      - name: Check project structure
+        shell: pwsh
+        run: |
+          Write-Host "📁 Checking MediaFlow Proxy project structure..."
+          
+          # Check main files
+          $requiredFiles = @("launcher.py", "mediaflow_proxy/__init__.py", "mediaflow_proxy/main.py")
+          foreach ($file in $requiredFiles) {
+            if (Test-Path $file) {
+              Write-Host "✅ Found: $file"
+            } else {
+              Write-Host "❌ Missing: $file"
+            }
+          }
+          
+          # Check directories that might exist
+          $checkDirs = @("mediaflow_proxy/static", "mediaflow_proxy/templates", "static", "templates")
+          foreach ($dir in $checkDirs) {
+            if (Test-Path $dir -PathType Container) {
+              Write-Host "✅ Found directory: $dir"
+              Get-ChildItem $dir | Format-Table Name, Length
+            } else {
+              Write-Host "⚠️ Directory not found: $dir"
+            }
+          }
+          
+          Write-Host "`n📄 MediaFlow Proxy module contents:"
+          if (Test-Path "mediaflow_proxy") {
+            Get-ChildItem -Recurse mediaflow_proxy | Format-Table Name, FullName, PSIsContainer
+          }
+      
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: |
-          pyinstaller launcher.py --onefile --name mediaflow `
-            --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
-            --add-data "mediaflow_proxy/templates;mediaflow_proxy/templates" `
-            --hidden-import uvloop `
-            --hidden-import uvicorn.loops.uvloop `
-            --hidden-import uvicorn.protocols.websockets.auto `
-            --collect-submodules mediaflow_proxy `
-            --console `
-            --icon mediaflow_proxy/static/favicon.ico
+          # Base PyInstaller command for MediaFlow Proxy
+          $cmd = @(
+            "pyinstaller",
+            "launcher.py",
+            "--onefile",
+            "--name", "mediaflow-proxy",
+            "--console",
+            "--hidden-import", "uvloop",
+            "--hidden-import", "uvicorn.loops.uvloop", 
+            "--hidden-import", "uvicorn.protocols.websockets.auto",
+            "--hidden-import", "uvicorn.protocols.http.auto",
+            "--hidden-import", "uvicorn.protocols.http.h11_impl",
+            "--hidden-import", "uvicorn.protocols.http.httptools_impl",
+            "--hidden-import", "uvicorn.protocols.websockets.websockets_impl",
+            "--hidden-import", "uvicorn.protocols.websockets.wsproto_impl",
+            "--hidden-import", "uvicorn.lifespan.on",
+            "--hidden-import", "uvicorn.lifespan.off",
+            "--hidden-import", "fastapi",
+            "--hidden-import", "pydantic",
+            "--hidden-import", "httpx",
+            "--hidden-import", "m3u8",
+            "--hidden-import", "cryptography",
+            "--collect-submodules", "mediaflow_proxy"
+          )
+          
+          # Add static directory if it exists (common locations)
+          $staticPaths = @("mediaflow_proxy/static", "static")
+          foreach ($staticPath in $staticPaths) {
+            if (Test-Path $staticPath -PathType Container) {
+              $cmd += "--add-data", "$staticPath;mediaflow_proxy/static"
+              Write-Host "✅ Adding static directory: $staticPath"
+              break
+            }
+          }
+          
+          # Add templates directory if it exists (though MediaFlow might not use templates)
+          $templatePaths = @("mediaflow_proxy/templates", "templates")
+          foreach ($templatePath in $templatePaths) {
+            if (Test-Path $templatePath -PathType Container) {
+              $cmd += "--add-data", "$templatePath;mediaflow_proxy/templates"
+              Write-Host "✅ Adding templates directory: $templatePath"
+              break
+            }
+          }
+          
+          # Try to find and add icon
+          $iconPaths = @("mediaflow_proxy/static/favicon.ico", "static/favicon.ico", "favicon.ico")
+          foreach ($iconPath in $iconPaths) {
+            if (Test-Path $iconPath) {
+              $cmd += "--icon", $iconPath
+              Write-Host "✅ Adding icon: $iconPath"
+              break
+            }
+          }
+          
+          Write-Host "`n🔨 Running PyInstaller with command:"
+          Write-Host ($cmd -join " ")
+          
+          # Execute PyInstaller
+          & $cmd[0] $cmd[1..($cmd.Length-1)]
+          
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "❌ PyInstaller failed with exit code $LASTEXITCODE"
+            exit $LASTEXITCODE
+          }
       
       - name: Verify EXE was created
+        shell: pwsh
         run: |
-          if (Test-Path "dist/mediaflow.exe") {
-            Write-Host "✅ EXE creato con successo"
-            Get-ChildItem dist/mediaflow.exe | Format-List Name, Length, LastWriteTime
+          $exePath = "dist/mediaflow-proxy.exe"
+          if (Test-Path $exePath) {
+            Write-Host "✅ EXE created successfully"
+            Get-ChildItem $exePath | Format-List Name, Length, LastWriteTime
+            
+            # Quick test run (5 second timeout)
+            Write-Host "`n🧪 Testing EXE (quick run)..."
+            try {
+              $process = Start-Process -FilePath $exePath -ArgumentList "--help" -PassThru -NoNewWindow -Wait -TimeoutSec 10
+              Write-Host "✅ EXE runs without immediate errors"
+            } catch {
+              Write-Host "⚠️ EXE test failed or timed out: $($_.Exception.Message)"
+            }
           } else {
-            Write-Error "❌ EXE non trovato!"
+            Write-Error "❌ EXE not found at: $exePath"
+            Write-Host "📁 Contents of dist directory:"
+            if (Test-Path "dist") {
+              Get-ChildItem dist | Format-Table
+            } else {
+              Write-Host "❌ dist directory doesn't exist"
+            }
             exit 1
           }
       
-      - name: Generate .env file
+      - name: Generate configuration files
         shell: pwsh
         run: |
+          # Create .env file
           $envContent = @"
-          # MediaFlow Proxy Configuration
-          API_PASSWORD=${{ env.API_PASSWORD }}
-          PORT=${{ env.PORT }}
-          WORKERS=${{ env.WORKERS }}
-          DEBUG=${{ env.DEBUG }}
-          
-          # Uncomment and modify as needed:
-          # SSL_CERT_FILE=cert.pem
-          # SSL_KEY_FILE=key.pem
-          "@
+# MediaFlow Proxy Configuration
+# Change these values as needed
+
+# API Password for security (CHANGE THIS!)
+API_PASSWORD=${{ env.API_PASSWORD }}
+
+# Server port
+PORT=${{ env.PORT }}
+
+# Debug mode
+DEBUG=${{ env.DEBUG }}
+
+# Optional: Enable streaming progress logging
+ENABLE_STREAMING_PROGRESS=false
+
+# Optional: Disable home page UI
+DISABLE_HOME_PAGE=false
+
+# Optional: Disable API documentation
+DISABLE_DOCS=false
+
+# Optional: Disable speedtest UI
+DISABLE_SPEEDTEST=false
+
+# Optional: Proxy settings
+# PROXY_URL=http://proxy:8080
+# ALL_PROXY=false
+
+# Optional: Transport routes for advanced proxy configuration
+# TRANSPORT_ROUTES={}
+"@
           $envContent | Out-File -FilePath "dist/.env" -Encoding UTF8
-          Write-Host "📄 File .env generato:"
-          Get-Content "dist/.env"
+          
+          # Create startup script
+          $startupScript = @"
+@echo off
+title MediaFlow Proxy Server
+echo.
+echo ==============================
+echo   MediaFlow Proxy Server
+echo ==============================
+echo.
+echo Starting server...
+echo Open your browser to: http://localhost:${{ env.PORT }}
+echo API Password: ${{ env.API_PASSWORD }}
+echo.
+echo Press Ctrl+C to stop the server
+echo.
+mediaflow-proxy.exe
+pause
+"@
+          $startupScript | Out-File -FilePath "dist/start-mediaflow.bat" -Encoding ASCII
+          
+          Write-Host "✅ Configuration files created"
       
       - name: Create README for distribution
         shell: pwsh
         run: |
           $readmeContent = @"
-          # MediaFlow Proxy - Windows Distribution
-          
-          ## Quick Start
-          1. Double-click `mediaflow.exe` to start the server
-          2. Server will start on http://localhost:${{ env.PORT }}
-          3. API Password: `${{ env.API_PASSWORD }}`
-          
-          ## Configuration
-          Edit `.env` file to customize settings:
-          - `API_PASSWORD`: Change the default password
-          - `PORT`: Server port (default: ${{ env.PORT }})
-          - `WORKERS`: Number of worker processes (default: ${{ env.WORKERS }})
-          - `DEBUG`: Enable debug mode (true/false)
-          
-          ## HTTPS Setup (Optional)
-          Place your SSL certificates in the same folder:
-          - `cert.pem` + `key.pem` OR
-          - `fullchain.pem` + `privkey.pem`
-          
-          ## Version Info
-          - Built from: ${{ github.ref_name }}
-          - Build date: ${{ github.run_number }}
-          - Commit: ${{ github.sha }}
-          "@
+# MediaFlow Proxy - Windows Distribution
+
+## Quick Start
+1. **Double-click `start-mediaflow.bat`** to start the server with a convenient window
+   OR
+   **Run `mediaflow-proxy.exe`** directly from command line
+
+2. Server will start on: **http://localhost:${{ env.PORT }}**
+3. API Documentation: **http://localhost:${{ env.PORT }}/docs**
+4. Speed Test: **http://localhost:${{ env.PORT }}/speedtest.html**
+
+## Default Credentials
+- **API Password**: `${{ env.API_PASSWORD }}`
+- **⚠️ IMPORTANT**: Change the default password in `.env` file!
+
+## Configuration
+Edit `.env` file to customize settings:
+- `API_PASSWORD`: Change the default password (REQUIRED for security)
+- `PORT`: Server port (default: ${{ env.PORT }})
+- `DEBUG`: Enable debug mode (true/false)
+- `ENABLE_STREAMING_PROGRESS`: Log streaming progress
+- `DISABLE_HOME_PAGE`: Disable the home page UI
+- `DISABLE_DOCS`: Disable API documentation
+- `DISABLE_SPEEDTEST`: Disable speed test UI
+
+## Advanced Configuration
+For proxy settings and transport routes, see the comments in `.env` file.
+
+## Usage Examples
+### Stream a video file:
+```
+http://localhost:${{ env.PORT }}/proxy/stream?d=VIDEO_URL&api_password=${{ env.API_PASSWORD }}
+```
+
+### Proxy HLS stream:
+```  
+http://localhost:${{ env.PORT }}/proxy/hls/manifest.m3u8?d=HLS_URL&api_password=${{ env.API_PASSWORD }}
+```
+
+### Convert DASH to HLS:
+```
+http://localhost:${{ env.PORT }}/proxy/mpd/manifest.m3u8?d=DASH_URL&api_password=${{ env.API_PASSWORD }}
+```
+
+## HTTPS Setup (Optional)
+Place your SSL certificates in the same folder as the exe:
+- `cert.pem` + `key.pem` OR
+- `fullchain.pem` + `privkey.pem`
+
+## Version Info
+- **Built from**: ${{ github.ref_name || 'manual build' }}
+- **Build date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
+- **Commit**: ${{ github.sha }}
+
+## Support
+For issues and documentation, visit:
+https://github.com/mhdzumair/mediaflow-proxy
+
+---
+⚡ High-performance proxy server for streaming media
+🔐 Supports HTTP(S), HLS, and MPEG-DASH with real-time DRM decryption
+"@
           $readmeContent | Out-File -FilePath "dist/README.txt" -Encoding UTF8
       
       - name: Create release bundle
         shell: pwsh
         run: |
           $files = @(
-            "dist/mediaflow.exe",
-            "dist/.env", 
-            "dist/README.txt"
+            "dist/mediaflow-proxy.exe",
+            "dist/.env",
+            "dist/README.txt",
+            "dist/start-mediaflow.bat"
           )
           
-          # Add example SSL files if they exist in repo
-          if (Test-Path "example-ssl/cert.example.pem") {
-            Copy-Item "example-ssl/*" -Destination "dist/" -Recurse -ErrorAction SilentlyContinue
-            $files += "dist/cert.example.pem", "dist/key.example.pem"
-          }
+          $version = "${{ github.ref_name || 'manual' }}"
+          $zipName = "mediaflow-proxy-$version-windows.zip"
           
-          $zipName = "mediaflow-${{ github.ref_name || 'manual' }}-windows.zip"
           Compress-Archive -Path $files -DestinationPath "dist/$zipName" -Force
           
-          Write-Host "📦 Bundle creato: $zipName"
-          Get-ChildItem "dist/$zipName" | Format-List Name, Length
+          Write-Host "📦 Release bundle created: $zipName"
+          Get-ChildItem "dist/$zipName" | Format-List Name, Length, LastWriteTime
+          
+          # Show bundle contents
+          Write-Host "`n📋 Bundle contents:"
+          $files | ForEach-Object { 
+            if (Test-Path $_) { 
+              Write-Host "✅ $($_ -replace 'dist/', '')"
+            } else {
+              Write-Host "❌ $($_ -replace 'dist/', '') (missing)"
+            }
+          }
       
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mediaflow-windows-${{ github.ref_name || github.run_number }}
+          name: mediaflow-proxy-windows-${{ github.ref_name || github.run_number }}
           path: dist/*.zip
           retention-days: 30
       
@@ -161,5 +351,24 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          body: |
+            ## MediaFlow Proxy Windows Release
+            
+            ### 🚀 Quick Start
+            1. Download and extract the ZIP file
+            2. Run `start-mediaflow.bat` to start the server
+            3. Open http://localhost:8888 in your browser
+            4. **⚠️ Change the default API password in `.env` file!**
+            
+            ### 📋 What's Included
+            - `mediaflow-proxy.exe` - Main executable
+            - `start-mediaflow.bat` - Convenient startup script
+            - `.env` - Configuration file
+            - `README.txt` - Detailed instructions
+            
+            ### 🔧 Configuration
+            Edit the `.env` file to customize settings like API password, port, and other options.
+            
+            For full documentation, visit: https://github.com/mhdzumair/mediaflow-proxy
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
