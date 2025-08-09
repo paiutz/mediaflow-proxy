@@ -1,4 +1,4 @@
-name: BuildEXE
+name: BuildEX
 
 on:
   push:
