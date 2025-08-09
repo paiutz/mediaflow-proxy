@@ -1,0 +1,74 @@
+name: BuildEXE
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger on tags like v1.0.0
+  workflow_dispatch:  # Allow manual run from GitHub UI
+
+jobs:
+  build-windows:
+    name: Build mediaflow.exe for Windows
+    runs-on: windows-latest
+
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 Install Poetry
+        uses: abatilo/actions-poetry@v3
+        with:
+          poetry-version: '1.8.2'
+
+      - name: 📥 Install dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pypoetry
+          key: ${{ runner.os }}-poetry-${{ hashFiles('**/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-poetry-
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-dev
+
+      - name: 🧾 Auto-generate .env
+        run: |
+          echo "API_PASSWORD=${{ secrets.API_PASSWORD || 'changeme' }}" > .env
+
+      - name: 🧊 Install PyInstaller
+        run: pip install pyinstaller
+
+      - name: ⚙️ Build mediaflow.exe with optional certs
+        shell: pwsh
+        run: |
+          $buildCommand = "pyinstaller launcher.py --onefile --name mediaflow --add-data 'mediaflow_proxy/static;mediaflow_proxy/static' --add-data '.env;.'"
+
+          # Add certs if they exist
+          if (Test-Path "cert.pem" -and Test-Path "key.pem") {
+            Write-Host "🔐 Adding cert.pem and key.pem to EXE"
+            $buildCommand += " --add-data 'cert.pem;.' --add-data 'key.pem;.'"
+          } else {
+            Write-Host "⚠️ cert.pem or key.pem missing - building HTTP-only"
+          }
+
+          # Run the build command
+          Invoke-Expression $buildCommand
+
+      - name: 📦 Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediaflow-exe
+          path: dist/mediaflow.exe
+
+      - name: 🚀 GitHub Release (on tag only)
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/mediaflow.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
