@@ -23,9 +23,6 @@ if os.getenv("DEBUG", "false").lower() == "true":
 
 port = int(os.getenv("PORT", 8888))
 
-# Importa FastAPI app
-from mediaflow_proxy.main import app
-
 def run():
     import uvicorn
 
@@ -51,22 +48,16 @@ def run():
     else:
         print("⚠️ Nessun certificato SSL trovato, uso HTTP")
 
-    # Leggi WORKERS da env, fallback al numero di core CPU
-    try:
-        workers = int(os.getenv("WORKERS", 0))
-        if workers < 1:
-            raise ValueError
-    except Exception:
-        workers = multiprocessing.cpu_count()
-
-    print(f"⚙️ Avvio con {workers} worker (configurati in WORKERS o default CPU)")
+    # Usa tutti i core disponibili
+    num_workers = max(1, multiprocessing.cpu_count())
+    print(f"⚙️ Avvio con {num_workers} worker su {multiprocessing.cpu_count()} core")
 
     uvicorn.run(
-        app,
+        "mediaflow_proxy.main:app",  # <-- Passa app come stringa
         host="0.0.0.0",
         port=port,
         reload=not is_frozen,
-        workers=workers,
+        workers=num_workers,
         log_level="info",
         **ssl_args
     )
