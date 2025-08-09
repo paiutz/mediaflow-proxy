@@ -50,16 +50,18 @@ jobs:
           pyinstaller launcher.py --onefile --name mediaflow `
             --add-data "mediaflow_proxy/static;mediaflow_proxy/static"
 
-      - name: Generate .env file accanto all'EXE
+      - name: Generate .env accanto all'EXE
         run: |
           echo "API_PASSWORD=${API_PASSWORD}" > dist/.env
           echo "PORT=${PORT}" >> dist/.env
           echo "DEBUG=true" >> dist/.env
 
-      - name: Upload EXE and .env artifact
+      - name: Create ZIP with EXE and .env
+        run: |
+          powershell Compress-Archive -Path dist/mediaflow.exe, dist/.env -DestinationPath dist/mediaflow_bundle.zip -Force
+
+      - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mediaflow-exe
-          path: |
-            dist/mediaflow.exe
-            dist/.env
+          name: mediaflow-bundle
+          path: dist/mediaflow_bundle.zip
