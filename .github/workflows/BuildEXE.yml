@@ -3,8 +3,8 @@ name: Build EXE
 on:
   push:
     tags:
-      - 'v*'        # trigger on tags like v1.0.0
-  workflow_dispatch:  # manual trigger
+      - 'v*'        # trigger su tag come v1.0.0
+  workflow_dispatch:  # trigger manuale
 
 jobs:
   build-windows:
@@ -41,12 +41,6 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --only main
 
-      - name: Generate .env file
-        run: |
-          echo "API_PASSWORD=${API_PASSWORD}" > .env
-          echo "PORT=${PORT}" >> .env
-          echo "DEBUG=true" >> .env
-
       - name: Install PyInstaller
         run: pip install pyinstaller
 
@@ -54,11 +48,18 @@ jobs:
         shell: pwsh
         run: |
           pyinstaller launcher.py --onefile --name mediaflow `
-            --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
-            --add-data ".env;."
+            --add-data "mediaflow_proxy/static;mediaflow_proxy/static"
 
-      - name: Upload EXE artifact
+      - name: Generate .env file accanto all'EXE
+        run: |
+          echo "API_PASSWORD=${API_PASSWORD}" > dist/.env
+          echo "PORT=${PORT}" >> dist/.env
+          echo "DEBUG=true" >> dist/.env
+
+      - name: Upload EXE and .env artifact
         uses: actions/upload-artifact@v4
         with:
           name: mediaflow-exe
-          path: dist/mediaflow.exe
+          path: |
+            dist/mediaflow.exe
+            dist/.env
