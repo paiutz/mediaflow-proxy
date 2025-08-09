@@ -23,6 +23,9 @@ if os.getenv("DEBUG", "false").lower() == "true":
 
 port = int(os.getenv("PORT", 8888))
 
+# Importa FastAPI app
+from mediaflow_proxy.main import app
+
 def run():
     import uvicorn
 
@@ -53,7 +56,7 @@ def run():
     print(f"⚙️ Avvio con {num_workers} worker su {multiprocessing.cpu_count()} core")
 
     uvicorn.run(
-        "mediaflow_proxy.main:app",  # <-- Passa app come stringa
+        app,
         host="0.0.0.0",
         port=port,
         reload=not is_frozen,
