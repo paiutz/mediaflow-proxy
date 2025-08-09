@@ -28,7 +28,7 @@ from mediaflow_proxy.main import app
 
 def run():
     import uvicorn
-
+    
     # Prova ad attivare uvloop su Windows
     try:
         import uvloop
@@ -36,10 +36,10 @@ def run():
         print("🚀 uvloop attivato")
     except ImportError:
         print("⚠️ uvloop non disponibile (usa loop predefinito)")
-
+    
     is_frozen = getattr(sys, 'frozen', False)
-
     ssl_args = {}
+    
     for cert_name, key_name in [("cert.pem", "key.pem"), ("fullchain.pem", "privkey.pem")]:
         cert_file = os.path.join(base_path, cert_name)
         key_file = os.path.join(base_path, key_name)
@@ -50,20 +50,24 @@ def run():
             break
     else:
         print("⚠️ Nessun certificato SSL trovato, uso HTTP")
-
-    # Usa tutti i core disponibili
-    num_workers = max(1, multiprocessing.cpu_count())
+    
+    # Usa tutti i core disponibili (ma solo 1 worker in modalità debug/reload)
+    num_workers = 1 if not is_frozen else max(1, multiprocessing.cpu_count())
     print(f"⚙️ Avvio con {num_workers} worker su {multiprocessing.cpu_count()} core")
-
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=port,
-        reload=not is_frozen,
-        workers=num_workers,
-        log_level="info",
-        **ssl_args
-    )
+    
+    try:
+        uvicorn.run(
+            app,
+            host="0.0.0.0",
+            port=port,
+            reload=not is_frozen,
+            workers=num_workers,
+            log_level="info",
+            **ssl_args
+        )
+    except Exception as e:
+        print(f"❌ Errore durante l'avvio del server: {e}")
+        sys.exit(1)
 
 if __name__ == "__main__":
     run()
