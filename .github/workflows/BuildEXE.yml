@@ -13,6 +13,7 @@ jobs:
     env:
       API_PASSWORD: ${{ secrets.API_PASSWORD || 'changeme' }}
       PORT: ${{ secrets.PORT || '8888' }}
+      WORKERS: ${{ secrets.WORKERS || '4' }}
 
     steps:
       - name: Checkout code
@@ -55,8 +56,9 @@ jobs:
           echo "API_PASSWORD=${API_PASSWORD}" > dist/.env
           echo "PORT=${PORT}" >> dist/.env
           echo "DEBUG=true" >> dist/.env
+          echo "WORKERS=${WORKERS}" >> dist/.env
 
-      - name: Create ZIP with EXE and .env
+      - name: Create ZIP con EXE e .env
         run: |
           powershell Compress-Archive -Path dist/mediaflow.exe, dist/.env -DestinationPath dist/mediaflow_bundle.zip -Force
 
