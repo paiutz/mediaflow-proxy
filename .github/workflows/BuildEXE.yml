@@ -3,8 +3,8 @@ name: Build EXE
 on:
   push:
     tags:
-      - 'v*'  # Trigger on version tags like v1.0.0
-  workflow_dispatch:  # Manual trigger
+      - 'v*'        # trigger on tags like v1.0.0
+  workflow_dispatch:  # manual trigger
 
 jobs:
   build-windows:
@@ -28,7 +28,7 @@ jobs:
         with:
           poetry-version: '1.8.2'
 
-      - name: Cache Poetry packages
+      - name: Cache Poetry packages (Windows)
         uses: actions/cache@v3
         with:
           path: ${{ env.USERPROFILE }}\.cache\pypoetry
@@ -43,9 +43,9 @@ jobs:
 
       - name: Generate .env file
         run: |
-          echo "API_PASSWORD=${API_PASSWORD}" > mediaflow_proxy/.env
-          echo "PORT=${PORT}" >> mediaflow_proxy/.env
-          echo "DEBUG=true" >> mediaflow_proxy/.env
+          echo "API_PASSWORD=${API_PASSWORD}" > .env
+          echo "PORT=${PORT}" >> .env
+          echo "DEBUG=true" >> .env
 
       - name: Install PyInstaller
         run: pip install pyinstaller
@@ -53,7 +53,6 @@ jobs:
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: |
-          Set-Location mediaflow_proxy
           pyinstaller launcher.py --onefile --name mediaflow `
             --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
             --add-data ".env;."
@@ -62,4 +61,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mediaflow-exe
-          path: mediaflow_proxy/dist/mediaflow.exe
+          path: dist/mediaflow.exe
