@@ -1,69 +1,165 @@
 name: Build EXE
-
 on:
   push:
     tags:
       - 'v*'        # trigger su tag come v1.0.0
   workflow_dispatch:  # trigger manuale
+    inputs:
+      debug:
+        description: 'Enable debug mode'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
 
 jobs:
   build-windows:
     runs-on: windows-latest
-
     env:
       API_PASSWORD: ${{ secrets.API_PASSWORD || 'changeme' }}
       PORT: ${{ secrets.PORT || '8888' }}
       WORKERS: ${{ secrets.WORKERS || '4' }}
-
+      DEBUG: ${{ github.event.inputs.debug || 'false' }}
+    
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-
+      
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
+          cache: 'pip'  # Cache pip dependencies automatically
+      
       - name: Install Poetry
         uses: abatilo/actions-poetry@v3
         with:
           poetry-version: '1.8.2'
-
-      - name: Cache Poetry packages (Windows)
-        uses: actions/cache@v3
+      
+      - name: Cache Poetry packages
+        uses: actions/cache@v4
         with:
-          path: ${{ env.USERPROFILE }}\.cache\pypoetry
+          path: ~/.cache/pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-poetry-
-
-      - name: Install dependencies
+      
+      - name: Configure Poetry and install dependencies
         run: |
           poetry config virtualenvs.create false
-          poetry install --only main
-
+          poetry install --only main --no-dev
+      
       - name: Install PyInstaller
         run: pip install pyinstaller
-
+      
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: |
           pyinstaller launcher.py --onefile --name mediaflow `
-            --add-data "mediaflow_proxy/static;mediaflow_proxy/static"
-
-      - name: Generate .env accanto all'EXE
+            --add-data "mediaflow_proxy/static;mediaflow_proxy/static" `
+            --add-data "mediaflow_proxy/templates;mediaflow_proxy/templates" `
+            --hidden-import uvloop `
+            --hidden-import uvicorn.loops.uvloop `
+            --hidden-import uvicorn.protocols.websockets.auto `
+            --collect-submodules mediaflow_proxy `
+            --console `
+            --icon mediaflow_proxy/static/favicon.ico
+      
+      - name: Verify EXE was created
         run: |
-          echo "API_PASSWORD=${API_PASSWORD}" > dist/.env
-          echo "PORT=${PORT}" >> dist/.env
-          echo "WORKERS=${WORKERS}" >> dist/.env
-          echo "DEBUG=true" >> dist/.env
-
-      - name: Create ZIP con EXE e .env
+          if (Test-Path "dist/mediaflow.exe") {
+            Write-Host "✅ EXE creato con successo"
+            Get-ChildItem dist/mediaflow.exe | Format-List Name, Length, LastWriteTime
+          } else {
+            Write-Error "❌ EXE non trovato!"
+            exit 1
+          }
+      
+      - name: Generate .env file
+        shell: pwsh
         run: |
-          powershell Compress-Archive -Path dist/mediaflow.exe, dist/.env -DestinationPath dist/mediaflow_bundle.zip -Force
-
-      - name: Upload ZIP artifact
+          $envContent = @"
+          # MediaFlow Proxy Configuration
+          API_PASSWORD=${{ env.API_PASSWORD }}
+          PORT=${{ env.PORT }}
+          WORKERS=${{ env.WORKERS }}
+          DEBUG=${{ env.DEBUG }}
+          
+          # Uncomment and modify as needed:
+          # SSL_CERT_FILE=cert.pem
+          # SSL_KEY_FILE=key.pem
+          "@
+          $envContent | Out-File -FilePath "dist/.env" -Encoding UTF8
+          Write-Host "📄 File .env generato:"
+          Get-Content "dist/.env"
+      
+      - name: Create README for distribution
+        shell: pwsh
+        run: |
+          $readmeContent = @"
+          # MediaFlow Proxy - Windows Distribution
+          
+          ## Quick Start
+          1. Double-click `mediaflow.exe` to start the server
+          2. Server will start on http://localhost:${{ env.PORT }}
+          3. API Password: `${{ env.API_PASSWORD }}`
+          
+          ## Configuration
+          Edit `.env` file to customize settings:
+          - `API_PASSWORD`: Change the default password
+          - `PORT`: Server port (default: ${{ env.PORT }})
+          - `WORKERS`: Number of worker processes (default: ${{ env.WORKERS }})
+          - `DEBUG`: Enable debug mode (true/false)
+          
+          ## HTTPS Setup (Optional)
+          Place your SSL certificates in the same folder:
+          - `cert.pem` + `key.pem` OR
+          - `fullchain.pem` + `privkey.pem`
+          
+          ## Version Info
+          - Built from: ${{ github.ref_name }}
+          - Build date: ${{ github.run_number }}
+          - Commit: ${{ github.sha }}
+          "@
+          $readmeContent | Out-File -FilePath "dist/README.txt" -Encoding UTF8
+      
+      - name: Create release bundle
+        shell: pwsh
+        run: |
+          $files = @(
+            "dist/mediaflow.exe",
+            "dist/.env", 
+            "dist/README.txt"
+          )
+          
+          # Add example SSL files if they exist in repo
+          if (Test-Path "example-ssl/cert.example.pem") {
+            Copy-Item "example-ssl/*" -Destination "dist/" -Recurse -ErrorAction SilentlyContinue
+            $files += "dist/cert.example.pem", "dist/key.example.pem"
+          }
+          
+          $zipName = "mediaflow-${{ github.ref_name || 'manual' }}-windows.zip"
+          Compress-Archive -Path $files -DestinationPath "dist/$zipName" -Force
+          
+          Write-Host "📦 Bundle creato: $zipName"
+          Get-ChildItem "dist/$zipName" | Format-List Name, Length
+      
+      - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mediaflow-bundle
-          path: dist/mediaflow_bundle.zip
+          name: mediaflow-windows-${{ github.ref_name || github.run_number }}
+          path: dist/*.zip
+          retention-days: 30
+      
+      - name: Create GitHub Release (on tag)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*.zip
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
