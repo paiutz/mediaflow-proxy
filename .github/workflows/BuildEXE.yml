@@ -40,12 +40,13 @@ jobs:
       - name: Install dependencies
         run: |
           poetry config virtualenvs.create false
-          poetry install --no-dev
+          poetry install --only main
 
       - name: Generate .env file
         run: |
           echo "API_PASSWORD=${API_PASSWORD}" > $GITHUB_WORKSPACE/.env
           echo "PORT=${PORT}" >> $GITHUB_WORKSPACE/.env
+          echo "DEBUG=true" >> $GITHUB_WORKSPACE/.env  # Optional for debugging
 
       - name: Install PyInstaller
         run: pip install pyinstaller
@@ -53,17 +54,37 @@ jobs:
       - name: Build EXE with PyInstaller
         shell: pwsh
         run: |
-          $buildCmd = "pyinstaller launcher.py --onefile --name mediaflow --add-data 'mediaflow_proxy/static;mediaflow_proxy/static' --add-data '.env;.'"
+          # Change to repo root to ensure .env and certs are found
+          Set-Location $Env:GITHUB_WORKSPACE
 
-          if ((Test-Path "cert.pem") -and (Test-Path "key.pem")) {
-            Write-Host "Adding cert.pem and key.pem to build"
-            $buildCmd += " --add-data 'cert.pem;.' --add-data 'key.pem;.'"
+          $buildCmd = @(
+            "pyinstaller",
+            "launcher.py",
+            "--onefile",
+            "--name", "mediaflow",
+            "--add-data", "mediaflow_proxy/static;mediaflow_proxy/static",
+            "--add-data", ".env;."
+          )
+
+          # Add certs if they exist
+          if (Test-Path "cert.pem" -and Test-Path "key.pem") {
+            Write-Host "Including cert.pem and key.pem"
+            $buildCmd += "--add-data"
+            $buildCmd += "cert.pem;."
+            $buildCmd += "--add-data"
+            $buildCmd += "key.pem;."
           }
-          else {
-            Write-Host "cert.pem or key.pem not found, building HTTP only"
+          if (Test-Path "fullchain.pem" -and Test-Path "privkey.pem") {
+            Write-Host "Including fullchain.pem and privkey.pem"
+            $buildCmd += "--add-data"
+            $buildCmd += "fullchain.pem;."
+            $buildCmd += "--add-data"
+            $buildCmd += "privkey.pem;."
           }
 
-          Invoke-Expression $buildCmd
+          # Run PyInstaller
+          Write-Host "Running PyInstaller with: $($buildCmd -join ' ')"
+          & $buildCmd
 
       - name: Upload EXE artifact
         uses: actions/upload-artifact@v4
