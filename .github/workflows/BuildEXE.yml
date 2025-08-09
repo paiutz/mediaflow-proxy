@@ -176,122 +176,124 @@ jobs:
       - name: Generate configuration files
         shell: pwsh
         run: |
-          $envContent = @"
-# MediaFlow Proxy Configuration
-# Change these values as needed
-
-# API Password for security (CHANGE THIS!)
-API_PASSWORD=${{ env.API_PASSWORD }}
-
-# Server port
-PORT=${{ env.PORT }}
-
-# Debug mode
-DEBUG=${{ env.DEBUG }}
-
-# Optional: Enable streaming progress logging
-ENABLE_STREAMING_PROGRESS=false
-
-# Optional: Disable home page UI
-DISABLE_HOME_PAGE=false
-
-# Optional: Disable API documentation
-DISABLE_DOCS=false
-
-# Optional: Disable speedtest UI
-DISABLE_SPEEDTEST=false
-
-# Optional: Proxy settings
-# PROXY_URL=http://proxy:8080
-# ALL_PROXY=false
-
-# Optional: Transport routes for advanced proxy configuration
-# TRANSPORT_ROUTES={}
-"@
-          $envContent | Out-File -FilePath "dist/.env" -Encoding UTF8
+          # Create .env file
+          $envLines = @(
+            "# MediaFlow Proxy Configuration",
+            "# Change these values as needed",
+            "",
+            "# API Password for security (CHANGE THIS!)",
+            "API_PASSWORD=${{ env.API_PASSWORD }}",
+            "",
+            "# Server port", 
+            "PORT=${{ env.PORT }}",
+            "",
+            "# Debug mode",
+            "DEBUG=${{ env.DEBUG }}",
+            "",
+            "# Optional: Enable streaming progress logging",
+            "ENABLE_STREAMING_PROGRESS=false",
+            "",
+            "# Optional: Disable home page UI", 
+            "DISABLE_HOME_PAGE=false",
+            "",
+            "# Optional: Disable API documentation",
+            "DISABLE_DOCS=false", 
+            "",
+            "# Optional: Disable speedtest UI",
+            "DISABLE_SPEEDTEST=false",
+            "",
+            "# Optional: Proxy settings",
+            "# PROXY_URL=http://proxy:8080",
+            "# ALL_PROXY=false",
+            "",
+            "# Optional: Transport routes for advanced proxy configuration", 
+            "# TRANSPORT_ROUTES={}"
+          )
+          $envLines | Out-File -FilePath "dist/.env" -Encoding UTF8
           
-          $startupScript = @"
-@echo off
-title MediaFlow Proxy Server
-echo.
-echo ==============================
-echo   MediaFlow Proxy Server
-echo ==============================
-echo.
-echo Starting server...
-echo Open your browser to: http://localhost:${{ env.PORT }}
-echo API Password: ${{ env.API_PASSWORD }}
-echo.
-echo Press Ctrl+C to stop the server
-echo.
-mediaflow-proxy.exe
-pause
-"@
-          $startupScript | Out-File -FilePath "dist/start-mediaflow.bat" -Encoding ASCII
+          # Create startup script
+          $batLines = @(
+            "@echo off",
+            "title MediaFlow Proxy Server", 
+            "echo.",
+            "echo ==============================",
+            "echo   MediaFlow Proxy Server",
+            "echo ==============================",
+            "echo.",
+            "echo Starting server...",
+            "echo Open your browser to: http://localhost:${{ env.PORT }}",
+            "echo API Password: ${{ env.API_PASSWORD }}",
+            "echo.",
+            "echo Press Ctrl+C to stop the server",
+            "echo.",
+            "mediaflow-proxy.exe",
+            "pause"
+          )
+          $batLines | Out-File -FilePath "dist/start-mediaflow.bat" -Encoding ASCII
           
           Write-Host "Configuration files created"
 
       - name: Create README for distribution
         shell: pwsh
         run: |
-          $readmeContent = @"
-# MediaFlow Proxy - Windows Distribution
-
-## Quick Start
-1. **Double-click start-mediaflow.bat** to start the server with a convenient window
-   OR
-   **Run mediaflow-proxy.exe** directly from command line
-
-2. Server will start on: **http://localhost:${{ env.PORT }}**
-3. API Documentation: **http://localhost:${{ env.PORT }}/docs**
-4. Speed Test: **http://localhost:${{ env.PORT }}/speedtest.html**
-
-## Default Credentials
-- **API Password**: ${{ env.API_PASSWORD }}
-- **IMPORTANT**: Change the default password in .env file!
-
-## Configuration
-Edit .env file to customize settings:
-- API_PASSWORD: Change the default password (REQUIRED for security)
-- PORT: Server port (default: ${{ env.PORT }})
-- DEBUG: Enable debug mode (true/false)
-- ENABLE_STREAMING_PROGRESS: Log streaming progress
-- DISABLE_HOME_PAGE: Disable the home page UI
-- DISABLE_DOCS: Disable API documentation
-- DISABLE_SPEEDTEST: Disable speed test UI
-
-## Advanced Configuration
-For proxy settings and transport routes, see the comments in .env file.
-
-## Usage Examples
-### Stream a video file:
-http://localhost:${{ env.PORT }}/proxy/stream?d=VIDEO_URL&api_password=${{ env.API_PASSWORD }}
-
-### Proxy HLS stream:
-http://localhost:${{ env.PORT }}/proxy/hls/manifest.m3u8?d=HLS_URL&api_password=${{ env.API_PASSWORD }}
-
-### Convert DASH to HLS:
-http://localhost:${{ env.PORT }}/proxy/mpd/manifest.m3u8?d=DASH_URL&api_password=${{ env.API_PASSWORD }}
-
-## HTTPS Setup (Optional)
-Place your SSL certificates in the same folder as the exe:
-- cert.pem + key.pem OR
-- fullchain.pem + privkey.pem
-
-## Version Info
-- **Built from**: ${{ github.ref_name || 'manual build' }}
-- **Build date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')
-- **Commit**: ${{ github.sha }}
-
-## Support
-For issues and documentation, visit:
-https://github.com/mhdzumair/mediaflow-proxy
-
----
-High-performance proxy server for streaming media
-Supports HTTP(S), HLS, and MPEG-DASH with real-time DRM decryption
-"@
-          $readmeContent | Out-File -FilePath "dist/README.txt" -Encoding UTF8
+          $readmeLines = @(
+            "# MediaFlow Proxy - Windows Distribution",
+            "",
+            "## Quick Start",
+            "1. **Double-click start-mediaflow.bat** to start the server with a convenient window",
+            "   OR",
+            "   **Run mediaflow-proxy.exe** directly from command line",
+            "",
+            "2. Server will start on: **http://localhost:${{ env.PORT }}**",
+            "3. API Documentation: **http://localhost:${{ env.PORT }}/docs**", 
+            "4. Speed Test: **http://localhost:${{ env.PORT }}/speedtest.html**",
+            "",
+            "## Default Credentials",
+            "- **API Password**: ${{ env.API_PASSWORD }}",
+            "- **IMPORTANT**: Change the default password in .env file!",
+            "",
+            "## Configuration", 
+            "Edit .env file to customize settings:",
+            "- API_PASSWORD: Change the default password (REQUIRED for security)",
+            "- PORT: Server port (default: ${{ env.PORT }})",
+            "- DEBUG: Enable debug mode (true/false)",
+            "- ENABLE_STREAMING_PROGRESS: Log streaming progress",
+            "- DISABLE_HOME_PAGE: Disable the home page UI",
+            "- DISABLE_DOCS: Disable API documentation",
+            "- DISABLE_SPEEDTEST: Disable speed test UI",
+            "",
+            "## Advanced Configuration",
+            "For proxy settings and transport routes, see the comments in .env file.",
+            "",
+            "## Usage Examples",
+            "### Stream a video file:",
+            "http://localhost:${{ env.PORT }}/proxy/stream?d=VIDEO_URL&api_password=${{ env.API_PASSWORD }}",
+            "",
+            "### Proxy HLS stream:",
+            "http://localhost:${{ env.PORT }}/proxy/hls/manifest.m3u8?d=HLS_URL&api_password=${{ env.API_PASSWORD }}",
+            "",
+            "### Convert DASH to HLS:",
+            "http://localhost:${{ env.PORT }}/proxy/mpd/manifest.m3u8?d=DASH_URL&api_password=${{ env.API_PASSWORD }}",
+            "",
+            "## HTTPS Setup (Optional)",
+            "Place your SSL certificates in the same folder as the exe:",
+            "- cert.pem + key.pem OR",
+            "- fullchain.pem + privkey.pem",
+            "",
+            "## Version Info",
+            "- **Built from**: ${{ github.ref_name || 'manual build' }}",
+            "- **Build date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')",
+            "- **Commit**: ${{ github.sha }}",
+            "",
+            "## Support",
+            "For issues and documentation, visit:",
+            "https://github.com/mhdzumair/mediaflow-proxy",
+            "",
+            "---",
+            "High-performance proxy server for streaming media",
+            "Supports HTTP(S), HLS, and MPEG-DASH with real-time DRM decryption"
+          )
+          $readmeLines | Out-File -FilePath "dist/README.txt" -Encoding UTF8
 
       - name: Create release bundle
         shell: pwsh
