@@ -2,51 +2,53 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# ✅ Determine base path whether running as EXE or .py
+# Determine base path whether running as EXE or .py
 base_path = os.path.dirname(sys.executable if getattr(sys, 'frozen', False) else __file__)
 
-# ✅ Load .env next to EXE or script
+# Load .env next to EXE or script
 dotenv_path = os.path.join(base_path, ".env")
 if os.path.exists(dotenv_path):
     load_dotenv(dotenv_path)
 else:
     print("⚠️ No .env file found")
 
-# ✅ Set fallback values
+# Set fallback values
 os.environ.setdefault("API_PASSWORD", "changeme")
 
-# ✅ Optional: Show API_PASSWORD if DEBUG=true
 if os.getenv("DEBUG", "false").lower() == "true":
     print(f"🔐 API_PASSWORD: {os.getenv('API_PASSWORD')}")
 
-# ✅ Get the PORT from .env or default to 8888
 port = int(os.getenv("PORT", 8888))  # Default to 8888 if PORT not set
 
-# ✅ Import the FastAPI app AFTER env setup
+# Import FastAPI app AFTER env setup
 from mediaflow_proxy.main import app
 
 def run():
     import uvicorn
 
-    # Check if running as frozen EXE
     is_frozen = getattr(sys, 'frozen', False)
 
-    # Try to load HTTPS certs from the same folder
-    cert_file = os.path.join(base_path, "cert.pem")
-    key_file = os.path.join(base_path, "key.pem")
-
     ssl_args = {}
-    if os.path.exists(cert_file) and os.path.exists(key_file):
-        ssl_args["ssl_certfile"] = cert_file
-        ssl_args["ssl_keyfile"] = key_file
-        print("🔐 HTTPS enabled (cert.pem + key.pem)")
+    cert_key_pairs = [
+        ("cert.pem", "key.pem"),
+        ("fullchain.pem", "privkey.pem"),
+    ]
+
+    for cert_name, key_name in cert_key_pairs:
+        cert_file = os.path.join(base_path, cert_name)
+        key_file = os.path.join(base_path, key_name)
+        if os.path.exists(cert_file) and os.path.exists(key_file):
+            ssl_args["ssl_certfile"] = cert_file
+            ssl_args["ssl_keyfile"] = key_file
+            print(f"🔐 HTTPS enabled ({cert_name} + {key_name})")
+            break
     else:
         print("⚠️ HTTPS certs not found, running on plain HTTP")
 
     uvicorn.run(
         app,
         host="0.0.0.0",
-        port=port,  # Use the port from .env
+        port=port,
         reload=not is_frozen,
         workers=1,
         log_level="info",
