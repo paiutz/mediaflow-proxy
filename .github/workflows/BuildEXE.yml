@@ -28,10 +28,11 @@ jobs:
         with:
           poetry-version: '1.8.2'
 
-      - name: Cache Poetry packages
+      - name: Cache Poetry packages (Windows)
+        if: runner.os == 'Windows'
         uses: actions/cache@v3
         with:
-          path: ~/.cache/pypoetry
+          path: ${{ env.USERPROFILE }}\.cache\pypoetry
           key: ${{ runner.os }}-poetry-${{ hashFiles('**/pyproject.toml') }}
           restore-keys: |
             ${{ runner.os }}-poetry-
