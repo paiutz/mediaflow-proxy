@@ -36,10 +36,10 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --no-dev
 
-     - name: 🧾 Auto-generate .env
-  run: |
-    echo "API_PASSWORD=${{ secrets.API_PASSWORD || 'changeme' }}" > .env
-    echo "PORT=${{ secrets.PORT || '8080' }}" >> .env
+      - name: 🧾 Auto-generate .env
+        run: |
+          echo "API_PASSWORD=${{ secrets.API_PASSWORD || 'changeme' }}" > .env
+          echo "PORT=${{ secrets.PORT || '8080' }}" >> .env
 
       - name: 🧊 Install PyInstaller
         run: pip install pyinstaller
@@ -49,7 +49,6 @@ jobs:
         run: |
           $buildCommand = "pyinstaller launcher.py --onefile --name mediaflow --add-data 'mediaflow_proxy/static;mediaflow_proxy/static' --add-data '.env;.'"
 
-          # Add certs if they exist
           if (Test-Path "cert.pem" -and Test-Path "key.pem") {
             Write-Host "🔐 Adding cert.pem and key.pem to EXE"
             $buildCommand += " --add-data 'cert.pem;.' --add-data 'key.pem;.'"
@@ -57,7 +56,6 @@ jobs:
             Write-Host "⚠️ cert.pem or key.pem missing - building HTTP-only"
           }
 
-          # Run the build command
           Invoke-Expression $buildCommand
 
       - name: 📦 Upload artifact
@@ -67,8 +65,8 @@ jobs:
           path: dist/mediaflow.exe
 
       - name: 🚀 GitHub Release (on tag only)
-        uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
         with:
           files: dist/mediaflow.exe
         env:
