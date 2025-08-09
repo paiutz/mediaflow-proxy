@@ -70,7 +70,7 @@ def run():
         except ImportError:
             print("⚠️ uvloop not available, using default event loop")
         
-        # Import the FastAPI app
+        # Import check - make sure the module is available
         try:
             from mediaflow_proxy.main import app
         except ImportError as e:
@@ -101,15 +101,19 @@ def run():
             protocol = "HTTP"
             print("⚠️ No SSL certificates found, using HTTP")
         
-        # Worker configuration
+        # Worker and reload configuration
         if is_frozen:
-            # For frozen executable, use multiple workers for better performance
+            # For frozen executable, use multiple workers but no reload
             num_workers = max(1, min(multiprocessing.cpu_count(), 4))
             reload_mode = False
+            # Use import string for multiple workers
+            app_target = "mediaflow_proxy.main:app"
         else:
-            # For development, use single worker with reload
+            # For development, use single worker with optional reload
             num_workers = 1
             reload_mode = debug_mode
+            # Can use app object for single worker
+            app_target = app
         
         print(f"⚙️ Starting server with {num_workers} worker(s)")
         print(f"🌐 Server will be available at: {protocol.lower()}://localhost:{port}")
@@ -122,17 +126,29 @@ def run():
         print(f"🛑 Press Ctrl+C to stop the server")
         print("-" * 50)
         
-        # Run the server
-        uvicorn.run(
-            app,
-            host="0.0.0.0",
-            port=port,
-            reload=reload_mode,
-            workers=num_workers,
-            log_level="info" if not debug_mode else "debug",
-            access_log=debug_mode,
-            **ssl_args
-        )
+        # Run the server with appropriate configuration
+        if is_frozen and num_workers > 1:
+            # Multiple workers - must use import string
+            uvicorn.run(
+                app_target,  # This will be the import string
+                host="0.0.0.0",
+                port=port,
+                workers=num_workers,
+                log_level="info" if not debug_mode else "debug",
+                access_log=debug_mode,
+                **ssl_args
+            )
+        else:
+            # Single worker - can use app object or import string
+            uvicorn.run(
+                app_target,
+                host="0.0.0.0",
+                port=port,
+                reload=reload_mode,
+                log_level="info" if not debug_mode else "debug",
+                access_log=debug_mode,
+                **ssl_args
+            )
         
     except KeyboardInterrupt:
         print("\n🛑 Server stopped by user")
