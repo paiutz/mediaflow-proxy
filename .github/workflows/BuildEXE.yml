@@ -53,12 +53,15 @@ jobs:
         shell: pwsh
         run: |
           $buildCmd = "pyinstaller launcher.py --onefile --name mediaflow --add-data 'mediaflow_proxy/static;mediaflow_proxy/static' --add-data '.env;.'"
-          if (Test-Path "cert.pem" -and Test-Path "key.pem") {
+
+          if ((Test-Path "cert.pem") -and (Test-Path "key.pem")) {
             Write-Host "Adding cert.pem and key.pem to build"
             $buildCmd += " --add-data 'cert.pem;.' --add-data 'key.pem;.'"
-          } else {
+          }
+          else {
             Write-Host "cert.pem or key.pem not found, building HTTP only"
           }
+
           Invoke-Expression $buildCmd
 
       - name: Upload EXE artifact
