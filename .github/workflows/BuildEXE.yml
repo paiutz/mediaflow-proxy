@@ -1,341 +1,186 @@
-name: Build EXE
+name: Build & Sign MediaFlow Proxy Windows EXE
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
   workflow_dispatch:
     inputs:
       debug:
-        description: 'Enable debug mode'
+        description: Enable debug mode
         required: false
         default: 'false'
         type: choice
-        options:
-          - 'true'
-          - 'false'
+        options: ['true','false']
+
+permissions:
+  contents: write
 
 jobs:
-  build-windows:
+  build:
     runs-on: windows-latest
     env:
-      API_PASSWORD: ${{ secrets.API_PASSWORD || 'changeme' }}
-      PORT: ${{ secrets.PORT || '8888' }}
-      DEBUG: ${{ github.event.inputs.debug || 'false' }}
+      PORT: "8888"
+      HOST: "0.0.0.0"
+      DEBUG: ${{ github.event.inputs.debug }}
+      UVICORN_HTTP2: "true"
+      DISABLE_HTTPS: "true"
+      WIN_CERT_PFX: ${{ secrets.WIN_CERT_PFX }}
+      WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+      PYTHONUTF8: "1"
 
     steps:
-      - name: Checkout code
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Set up Python 3.11
+      - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
 
-      - name: Install Poetry
-        uses: abatilo/actions-poetry@v3
-        with:
-          poetry-version: '1.8.2'
-
-      - name: Cache Poetry packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pypoetry
-          key: ${{ runner.os }}-poetry-${{ hashFiles('**/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-poetry-
-
-      - name: Configure Poetry and install dependencies
+      - name: Show build context
+        shell: pwsh
         run: |
-          poetry config virtualenvs.create false
-          poetry install --only main --no-dev
+          Write-Host "Ref: $env:GITHUB_REF"
+          Write-Host "Tag: $env:GITHUB_REF_NAME"
+          python --version
+          pip --version
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install `
+            fastapi `
+            "uvicorn[standard]>=0.20.0" `
+            h2 `
+            python-dotenv `
+            httpx `
+            m3u8 `
+            cryptography `
+            psutil `
+            httptools `
+            pydantic-settings `
+            tenacity `
+            pywin32 `
+            pycryptodome `
+            tqdm `
+            xmltodict `
+            aiofiles `
+            bs4 `
+            yarl `
+            multidict
 
       - name: Install PyInstaller
+        shell: pwsh
         run: pip install pyinstaller
 
-      - name: Check project structure
+      - name: Install OpenSSL via Chocolatey
         shell: pwsh
-        run: |
-          Write-Host "Checking MediaFlow Proxy project structure..."
-          
-          $requiredFiles = @("launcher.py", "mediaflow_proxy/__init__.py", "mediaflow_proxy/main.py")
-          foreach ($file in $requiredFiles) {
-            if (Test-Path $file) {
-              Write-Host "Found: $file"
-            } else {
-              Write-Host "Missing: $file"
-            }
-          }
-          
-          $checkDirs = @("mediaflow_proxy/static", "mediaflow_proxy/templates", "static", "templates")
-          foreach ($dir in $checkDirs) {
-            if (Test-Path $dir -PathType Container) {
-              Write-Host "Found directory: $dir"
-              Get-ChildItem $dir | Format-Table Name, Length
-            } else {
-              Write-Host "Directory not found: $dir"
-            }
-          }
-          
-          Write-Host "`nMediaFlow Proxy module contents:"
-          if (Test-Path "mediaflow_proxy") {
-            Get-ChildItem -Recurse mediaflow_proxy | Format-Table Name, FullName, PSIsContainer
-          }
+        run: choco install openssl.light --no-progress --yes
 
-      - name: Build EXE with PyInstaller
+      - name: Verify OpenSSL DLLs
         shell: pwsh
         run: |
-          $cmd = @(
-            "pyinstaller",
-            "launcher.py",
-            "--onefile",
-            "--name", "mediaflow-proxy",
-            "--console",
-            "--hidden-import", "uvloop",
-            "--hidden-import", "uvicorn.loops.uvloop", 
-            "--hidden-import", "uvicorn.protocols.websockets.auto",
-            "--hidden-import", "uvicorn.protocols.http.auto",
-            "--hidden-import", "uvicorn.protocols.http.h11_impl",
-            "--hidden-import", "uvicorn.protocols.http.httptools_impl",
-            "--hidden-import", "uvicorn.protocols.websockets.websockets_impl",
-            "--hidden-import", "uvicorn.protocols.websockets.wsproto_impl",
-            "--hidden-import", "uvicorn.lifespan.on",
-            "--hidden-import", "uvicorn.lifespan.off",
-            "--hidden-import", "fastapi",
-            "--hidden-import", "pydantic",
-            "--hidden-import", "httpx",
-            "--hidden-import", "m3u8",
-            "--hidden-import", "cryptography",
-            "--collect-submodules", "mediaflow_proxy"
-          )
-          
-          $staticPaths = @("mediaflow_proxy/static", "static")
-          foreach ($staticPath in $staticPaths) {
-            if (Test-Path $staticPath -PathType Container) {
-              $cmd += "--add-data", "$staticPath;mediaflow_proxy/static"
-              Write-Host "Adding static directory: $staticPath"
-              break
-            }
-          }
-          
-          $templatePaths = @("mediaflow_proxy/templates", "templates")
-          foreach ($templatePath in $templatePaths) {
-            if (Test-Path $templatePath -PathType Container) {
-              $cmd += "--add-data", "$templatePath;mediaflow_proxy/templates"
-              Write-Host "Adding templates directory: $templatePath"
-              break
-            }
-          }
-          
-          $iconPaths = @("mediaflow_proxy/static/favicon.ico", "static/favicon.ico", "favicon.ico")
-          foreach ($iconPath in $iconPaths) {
-            if (Test-Path $iconPath) {
-              $cmd += "--icon", $iconPath
-              Write-Host "Adding icon: $iconPath"
-              break
-            }
-          }
-          
-          Write-Host "`nRunning PyInstaller with command:"
-          Write-Host ($cmd -join " ")
-          
-          & $cmd[0] $cmd[1..($cmd.Length-1)]
-          
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "PyInstaller failed with exit code $LASTEXITCODE"
-            exit $LASTEXITCODE
-          }
-
-      - name: Verify EXE was created
-        shell: pwsh
-        run: |
-          $exePath = "dist/mediaflow-proxy.exe"
-          if (Test-Path $exePath) {
-            Write-Host "EXE created successfully"
-            Get-ChildItem $exePath | Format-List Name, Length, LastWriteTime
-            
-            Write-Host "`nTesting EXE (quick run)..."
-            try {
-              $process = Start-Process -FilePath $exePath -ArgumentList "--help" -PassThru -NoNewWindow -Wait -TimeoutSec 10
-              Write-Host "EXE runs without immediate errors"
-            } catch {
-              Write-Host "EXE test failed or timed out: $($_.Exception.Message)"
-            }
+          $opensslBin = "C:\Program Files\OpenSSL\bin"
+          if (Test-Path $opensslBin) {
+            Get-ChildItem -Path "$opensslBin\*.dll" | Select-Object Name, Length
           } else {
-            Write-Error "EXE not found at: $exePath"
-            Write-Host "Contents of dist directory:"
-            if (Test-Path "dist") {
-              Get-ChildItem dist | Format-Table
-            } else {
-              Write-Host "dist directory doesn't exist"
-            }
-            exit 1
+            Write-Warning "OpenSSL bin not found at $opensslBin"
           }
 
-      - name: Generate configuration files
+      - name: Build EXE
         shell: pwsh
         run: |
-          # Create .env file
-          $envLines = @(
-            "# MediaFlow Proxy Configuration",
-            "# Change these values as needed",
-            "",
-            "# API Password for security (CHANGE THIS!)",
-            "API_PASSWORD=${{ env.API_PASSWORD }}",
-            "",
-            "# Server port", 
-            "PORT=${{ env.PORT }}",
-            "",
-            "# Debug mode",
-            "DEBUG=${{ env.DEBUG }}",
-            "",
-            "# Optional: Enable streaming progress logging",
-            "ENABLE_STREAMING_PROGRESS=false",
-            "",
-            "# Optional: Disable home page UI", 
-            "DISABLE_HOME_PAGE=false",
-            "",
-            "# Optional: Disable API documentation",
-            "DISABLE_DOCS=false", 
-            "",
-            "# Optional: Disable speedtest UI",
-            "DISABLE_SPEEDTEST=false",
-            "",
-            "# Optional: Proxy settings",
-            "# PROXY_URL=http://proxy:8080",
-            "# ALL_PROXY=false",
-            "",
-            "# Optional: Transport routes for advanced proxy configuration", 
-            "# TRANSPORT_ROUTES={}"
-          )
-          $envLines | Out-File -FilePath "dist/.env" -Encoding UTF8
-          
-          # Create startup script
-          $batLines = @(
-            "@echo off",
-            "title MediaFlow Proxy Server", 
-            "echo.",
-            "echo ==============================",
-            "echo   MediaFlow Proxy Server",
-            "echo ==============================",
-            "echo.",
-            "echo Starting server...",
-            "echo Open your browser to: http://localhost:${{ env.PORT }}",
-            "echo API Password: ${{ env.API_PASSWORD }}",
-            "echo.",
-            "echo Press Ctrl+C to stop the server",
-            "echo.",
-            "mediaflow-proxy.exe",
-            "pause"
-          )
-          $batLines | Out-File -FilePath "dist/start-mediaflow.bat" -Encoding ASCII
-          
-          Write-Host "Configuration files created"
+          $opensslBin = "C:\Program Files\OpenSSL\bin"
+          python -m PyInstaller --onefile --clean --name mediaflow-proxy `
+            --add-data "$opensslBin;bin" `
+            --add-data "mediaflow_proxy;mediaflow_proxy" `
+            --add-data "mediaflow_proxy\static;mediaflow_proxy\static" `
+            --hidden-import Crypto `
+            --hidden-import tqdm `
+            --hidden-import httpx `
+            --hidden-import yarl `
+            --hidden-import multidict `
+            --hidden-import bs4 `
+            --hidden-import xmltodict `
+            --hidden-import aiofiles `
+            --hidden-import psutil `
+            --hidden-import pydantic_settings `
+            --hidden-import tenacity `
+            --hidden-import cryptography.hazmat.backends.openssl.backend `
+            --hidden-import mediaflow_proxy.utils.http_utils `
+            --hidden-import mediaflow_proxy.main `
+            --hidden-import uvloop `
+            --hidden-import httptools `
+            launcher1.py
 
-      - name: Create README for distribution
+      - name: Install signing certificate
+        if: env.WIN_CERT_PFX != '' && env.WIN_CERT_PASSWORD != ''
         shell: pwsh
         run: |
-          $readmeLines = @(
-            "# MediaFlow Proxy - Windows Distribution",
-            "",
-            "## Quick Start",
-            "1. **Double-click start-mediaflow.bat** to start the server with a convenient window",
-            "   OR",
-            "   **Run mediaflow-proxy.exe** directly from command line",
-            "",
-            "2. Server will start on: **http://localhost:${{ env.PORT }}**",
-            "3. API Documentation: **http://localhost:${{ env.PORT }}/docs**", 
-            "4. Speed Test: **http://localhost:${{ env.PORT }}/speedtest.html**",
-            "",
-            "## Default Credentials",
-            "- **API Password**: ${{ env.API_PASSWORD }}",
-            "- **IMPORTANT**: Change the default password in .env file!",
-            "",
-            "## Configuration", 
-            "Edit .env file to customize settings:",
-            "- API_PASSWORD: Change the default password (REQUIRED for security)",
-            "- PORT: Server port (default: ${{ env.PORT }})",
-            "- DEBUG: Enable debug mode (true/false)",
-            "- ENABLE_STREAMING_PROGRESS: Log streaming progress",
-            "- DISABLE_HOME_PAGE: Disable the home page UI",
-            "- DISABLE_DOCS: Disable API documentation",
-            "- DISABLE_SPEEDTEST: Disable speed test UI",
-            "",
-            "## Advanced Configuration",
-            "For proxy settings and transport routes, see the comments in .env file.",
-            "",
-            "## Usage Examples",
-            "### Stream a video file:",
-            "http://localhost:${{ env.PORT }}/proxy/stream?d=VIDEO_URL&api_password=${{ env.API_PASSWORD }}",
-            "",
-            "### Proxy HLS stream:",
-            "http://localhost:${{ env.PORT }}/proxy/hls/manifest.m3u8?d=HLS_URL&api_password=${{ env.API_PASSWORD }}",
-            "",
-            "### Convert DASH to HLS:",
-            "http://localhost:${{ env.PORT }}/proxy/mpd/manifest.m3u8?d=DASH_URL&api_password=${{ env.API_PASSWORD }}",
-            "",
-            "## HTTPS Setup (Optional)",
-            "Place your SSL certificates in the same folder as the exe:",
-            "- cert.pem + key.pem OR",
-            "- fullchain.pem + privkey.pem",
-            "",
-            "## Version Info",
-            "- **Built from**: ${{ github.ref_name || 'manual build' }}",
-            "- **Build date**: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss UTC')",
-            "- **Commit**: ${{ github.sha }}",
-            "",
-            "## Support",
-            "For issues and documentation, visit:",
-            "https://github.com/mhdzumair/mediaflow-proxy",
-            "",
-            "---",
-            "High-performance proxy server for streaming media",
-            "Supports HTTP(S), HLS, and MPEG-DASH with real-time DRM decryption"
-          )
-          $readmeLines | Out-File -FilePath "dist/README.txt" -Encoding UTF8
+          Write-Host "Importing PFX certificate..."
+          $pfx = [Convert]::FromBase64String($Env:WIN_CERT_PFX)
+          [IO.File]::WriteAllBytes("cert.pfx", $pfx)
+          certutil -f -p "$Env:WIN_CERT_PASSWORD" -importpfx cert.pfx
 
-      - name: Create release bundle
+      - name: Sign EXE with timestamp
+        if: success() && env.WIN_CERT_PFX != '' && env.WIN_CERT_PASSWORD != ''
         shell: pwsh
         run: |
-          $files = @(
-            "dist/mediaflow-proxy.exe",
-            "dist/.env",
-            "dist/README.txt",
-            "dist/start-mediaflow.bat"
-          )
-          
-          $version = "${{ github.ref_name || 'manual' }}"
-          $zipName = "mediaflow-proxy-$version-windows.zip"
-          
-          Compress-Archive -Path $files -DestinationPath "dist/$zipName" -Force
-          
-          Write-Host "Release bundle created: $zipName"
-          Get-ChildItem "dist/$zipName" | Format-List Name, Length, LastWriteTime
-          
-          Write-Host "`nBundle contents:"
-          $files | ForEach-Object { 
-            if (Test-Path $_) { 
-              Write-Host "Included: $($_ -replace 'dist/', '')"
-            } else {
-              Write-Host "Missing: $($_ -replace 'dist/', '') (missing)"
-            }
+          Write-Host "Signing EXE..."
+          $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe"
+          & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 `
+            /f cert.pfx /p "$Env:WIN_CERT_PASSWORD" dist\mediaflow-proxy.exe
+
+      - name: Warn if signing skipped
+        if: env.WIN_CERT_PFX == '' || env.WIN_CERT_PASSWORD == ''
+        shell: pwsh
+        run: Write-Host "Signing skipped - missing certificate secrets"
+
+      - name: Smart smoke test
+        shell: pwsh
+        run: |
+          $exe = "dist\mediaflow-proxy.exe"
+          Write-Host "=== Smoke Test ==="
+          if (-not (Test-Path $exe)) { throw "Executable not found at $exe" }
+          $fileInfo = Get-Item $exe
+          Write-Host "✅ Executable created: $($fileInfo.Length) bytes"
+          $env:DISABLE_HTTPS = "true"
+          $env:PORT = "8888"
+          Write-Host "Testing startup without API_PASSWORD..."
+          $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          if ($proc.HasExited) {
+            Write-Host "✅ Exited cleanly (expected without API_PASSWORD)"
+            Write-Host "Exit code: $($proc.ExitCode)"
+          } else {
+            Write-Host "⚠️ Process still running; stopping it..."
+            Stop-Process -Id $proc.Id -Force
+            Write-Host "✅ Stopped process"
           }
 
-      - name: Upload build artifact
+      - name: Package artifacts (versioned)
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "build-$env:GITHUB_RUN_NUMBER" }
+          $zipName = "mediaflow-proxy-win-$version.zip"
+          Compress-Archive -Path dist\* -DestinationPath $zipName -Force
+          Write-Host "Created $zipName"
+          echo "ARTIFACT_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: mediaflow-proxy-windows-${{ github.ref_name || github.run_number }}
-          path: dist/*.zip
-          retention-days: 30
+          name: mediaflow-proxy-windows
+          path: ${{ env.ARTIFACT_NAME }}
 
-      - name: Create GitHub Release (on tag)
+      - name: Create GitHub release
         if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.zip
           draft: false
           prerelease: false
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ env.ARTIFACT_NAME }}
