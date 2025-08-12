@@ -1,0 +1,186 @@
+name: Build & Sign MediaFlow Proxy Windows EXE
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: Enable debug mode
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true','false']
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    env:
+      PORT: "8888"
+      HOST: "0.0.0.0"
+      DEBUG: ${{ github.event.inputs.debug }}
+      UVICORN_HTTP2: "true"
+      DISABLE_HTTPS: "true"
+      WIN_CERT_PFX: ${{ secrets.WIN_CERT_PFX }}
+      WIN_CERT_PASSWORD: ${{ secrets.WIN_CERT_PASSWORD }}
+      PYTHONUTF8: "1"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Show build context
+        shell: pwsh
+        run: |
+          Write-Host "Ref: $env:GITHUB_REF"
+          Write-Host "Tag: $env:GITHUB_REF_NAME"
+          python --version
+          pip --version
+
+      - name: Install dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip wheel
+          pip install `
+            fastapi `
+            "uvicorn[standard]>=0.20.0" `
+            h2 `
+            python-dotenv `
+            httpx `
+            m3u8 `
+            cryptography `
+            psutil `
+            httptools `
+            pydantic-settings `
+            tenacity `
+            pywin32 `
+            pycryptodome `
+            tqdm `
+            xmltodict `
+            aiofiles `
+            bs4 `
+            yarl `
+            multidict
+
+      - name: Install PyInstaller
+        shell: pwsh
+        run: pip install pyinstaller
+
+      - name: Install OpenSSL via Chocolatey
+        shell: pwsh
+        run: choco install openssl.light --no-progress --yes
+
+      - name: Verify OpenSSL DLLs
+        shell: pwsh
+        run: |
+          $opensslBin = "C:\Program Files\OpenSSL\bin"
+          if (Test-Path $opensslBin) {
+            Get-ChildItem -Path "$opensslBin\*.dll" | Select-Object Name, Length
+          } else {
+            Write-Warning "OpenSSL bin not found at $opensslBin"
+          }
+
+      - name: Build EXE
+        shell: pwsh
+        run: |
+          $opensslBin = "C:\Program Files\OpenSSL\bin"
+          python -m PyInstaller --onefile --clean --name mediaflow-proxy `
+            --add-data "$opensslBin;bin" `
+            --add-data "mediaflow_proxy;mediaflow_proxy" `
+            --add-data "mediaflow_proxy\static;mediaflow_proxy\static" `
+            --hidden-import Crypto `
+            --hidden-import tqdm `
+            --hidden-import httpx `
+            --hidden-import yarl `
+            --hidden-import multidict `
+            --hidden-import bs4 `
+            --hidden-import xmltodict `
+            --hidden-import aiofiles `
+            --hidden-import psutil `
+            --hidden-import pydantic_settings `
+            --hidden-import tenacity `
+            --hidden-import cryptography.hazmat.backends.openssl.backend `
+            --hidden-import mediaflow_proxy.utils.http_utils `
+            --hidden-import mediaflow_proxy.main `
+            --hidden-import uvloop `
+            --hidden-import httptools `
+            launcher1.py
+
+      - name: Install signing certificate
+        if: env.WIN_CERT_PFX != '' && env.WIN_CERT_PASSWORD != ''
+        shell: pwsh
+        run: |
+          Write-Host "Importing PFX certificate..."
+          $pfx = [Convert]::FromBase64String($Env:WIN_CERT_PFX)
+          [IO.File]::WriteAllBytes("cert.pfx", $pfx)
+          certutil -f -p "$Env:WIN_CERT_PASSWORD" -importpfx cert.pfx
+
+      - name: Sign EXE with timestamp
+        if: success() && env.WIN_CERT_PFX != '' && env.WIN_CERT_PASSWORD != ''
+        shell: pwsh
+        run: |
+          Write-Host "Signing EXE..."
+          $signtool = "C:\Program Files (x86)\Windows Kits\10\bin\x64\signtool.exe"
+          & $signtool sign /fd SHA256 /a /tr http://timestamp.digicert.com /td SHA256 `
+            /f cert.pfx /p "$Env:WIN_CERT_PASSWORD" dist\mediaflow-proxy.exe
+
+      - name: Warn if signing skipped
+        if: env.WIN_CERT_PFX == '' || env.WIN_CERT_PASSWORD == ''
+        shell: pwsh
+        run: Write-Host "Signing skipped - missing certificate secrets"
+
+      - name: Smart smoke test
+        shell: pwsh
+        run: |
+          $exe = "dist\mediaflow-proxy.exe"
+          Write-Host "=== Smoke Test ==="
+          if (-not (Test-Path $exe)) { throw "Executable not found at $exe" }
+          $fileInfo = Get-Item $exe
+          Write-Host "✅ Executable created: $($fileInfo.Length) bytes"
+          $env:DISABLE_HTTPS = "true"
+          $env:PORT = "8888"
+          Write-Host "Testing startup without API_PASSWORD..."
+          $proc = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          if ($proc.HasExited) {
+            Write-Host "✅ Exited cleanly (expected without API_PASSWORD)"
+            Write-Host "Exit code: $($proc.ExitCode)"
+          } else {
+            Write-Host "⚠️ Process still running; stopping it..."
+            Stop-Process -Id $proc.Id -Force
+            Write-Host "✅ Stopped process"
+          }
+
+      - name: Package artifacts (versioned)
+        shell: pwsh
+        run: |
+          $version = if ($env:GITHUB_REF_NAME) { $env:GITHUB_REF_NAME } else { "build-$env:GITHUB_RUN_NUMBER" }
+          $zipName = "mediaflow-proxy-win-$version.zip"
+          Compress-Archive -Path dist\* -DestinationPath $zipName -Force
+          Write-Host "Created $zipName"
+          echo "ARTIFACT_NAME=$zipName" >> $env:GITHUB_ENV
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mediaflow-proxy-windows
+          path: ${{ env.ARTIFACT_NAME }}
+
+      - name: Create GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          files: ${{ env.ARTIFACT_NAME }}
